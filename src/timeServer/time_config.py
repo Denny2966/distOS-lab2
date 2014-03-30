@@ -1,0 +1,3 @@
+isMaster = True
+masterPort = 8100
+masterIP = "127.0.0.1"

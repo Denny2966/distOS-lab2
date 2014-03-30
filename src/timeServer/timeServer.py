@@ -7,13 +7,15 @@ import time
 import subprocess
 import socket
 import timeit
-from SimpleXMLRPCServer import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
+import SocketServer
 
-#whoever has the lowest port number for is the leader.
+from SimpleXMLRPCServer import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
+class AsyncXMLRPCServer(SocketServer.ThreadingMixIn,SimpleXMLRPCServer): pass 
+
+otherProcesses = []
+port = 0
+
 class TimeServer(threading.Thread):
-    otherProcesses = []
-    port = 0
-    offset = 0
     def run(self):
         self.BerkleyTime()
     def BerkleyTime(self):
@@ -21,13 +23,14 @@ class TimeServer(threading.Thread):
         Implementation of the berkley algorthim,
         keeps track of other proceseses
         """
+        global otherProcesses
         if tcf.isMaster:
             print os.getpid(), "Master initializing."
         while tcf.isMaster:
             time.sleep(10)
             rtts = []
             times = []
-            for process in TimeServer.otherProcesses:
+            for process in otherProcesses:
                 try:
                     proxy = xmlrpclib.ServerProxy("http://" + process[0] + ":" + str(process[1]))
                     #calculate latency
@@ -35,63 +38,74 @@ class TimeServer(threading.Thread):
                     rtts.append(t.timeit()*2.0)
                     times.append( proxy.getTime())
                 except:
-                    TimeServer.otherProcesses.remove(process)
+                    otherProcesses.remove(process)
                     pass
                 average = sum(times)/len(times)
-                for process in TimeServer.otherProcesses:
+                for process in otherProcesses:
                     try:
                         proxy = xmlrpclib.ServerProxy("http://" + process[0] + ":" + str(process[1]))
-                        index = TimeServer.otherProcesses.index(process)
+                        index = otherProcesses.index(process)
                         proxy.setOffset(times[index] - average)
                     except:
-                        index = TimeServer.otherProcesses.index(process)
-                        TimeServer.otherProcesses.remove(process)
+                        index = otherProcesses.index(process)
+                        otherProcesses.remove(process)
                         del times[index]
 
-class OtherProcess(threading.Thread):
+class ServerRequestThread(threading.Thread):
     """
-    Launches XML async server
-    Runs heartbeat to check if master is still active, gets list of processes
-    Runs election if failure is detected
+    Launches xml async server
     """
     def run(self):
-        self.proxy = xmlrpclib.ServerProxy("http://" + tcf.masterIP + ":"+ str( tcf.masterPort ))
         #heartbeat
-        for port in xrange(8100,8200):
-            TimeServer.port = port
+        for p in xrange(8100,8200):
+            port = p
             try:
+                print "starting server", port
                 server = AsyncXMLRPCServer(('', port), SimpleXMLRPCRequestHandler)
                 server.register_function(election, "election")
                 server.register_function(registerProcess, "registerProcess")
                 server.register_function(setOffset, "setOffset")
                 server.serve_forever()
-            except:
+            except Exception as e:
+                print e
                 continue
+
+class ElectionManager(threading.Thread):
+    """
+    Runs heartbeat to check if master is still active, gets list of processes
+    Runs election if failure is detected
+    """
+    def run(self):
+        print port
+        self.proxy = xmlrpclib.ServerProxy("http://" + tcf.masterIP + ":"+ str( tcf.masterPort )) #proxy to master port
         if tcf.masterIP == "127.0.0.1":
             ipAddress = "127.0.0.1"
         else:
             ipAddress = socket.gethostbyname(socket.gethostname())
         if not tcf.isMaster:
-            TimeServer.otherProcesses = self.proxy.registerProcess(ipAddress,TimeServer.port)
-        while True:
-            time.sleep(1)
-            try:
-                TimeServer.otherProcesses = self.proxy.registerProcess(ipAddress,self.port)
-            except:
+            try: 
+                print "contacting master..."
+                otherProcesses = self.proxy.registerProcess(ipAddress,port)
+                while True:
+                    time.sleep(1)
+                    otherProcesses = self.proxy.registerProcess(ipAddress,port)
+            except Exception as e:
+                print e
                 election()
 
 def registerProcess(ipAddress,port):
+    print os.getpid(), "registerProcess called"
     if (ipAddress,port) not in otherProcesses:
         print "Registering Process", (ipAddress,port)
         otherProcesses.append((ipAddress,port))
-    return TimeServer.otherProcesses
+    return otherProcesses
 
 def election():
     print "Starting election", os.getpid()
     winner = True
-    for process in TimeServer.otherProcesses:
+    for process in otherProcesses:
         try:
-            if TimeServer.port > process[1]: 
+            if port > process[1]: 
                 proxy = xmlrpclib.ServerProxy("http://" + process[0] + ":" + process[1])
                 result = proxy.election()
                 winner = False
@@ -104,7 +118,7 @@ def election():
         print "process", os.getpid(), "Won Election"
         tcf.isMaster = True
         timeserver = TimeServer()
-        timeserver.run()
+        timeserver.start()
         return "IWON"
     return "OK"
 
@@ -118,6 +132,9 @@ def getOffset():
 
 if __name__ == '__main__':
     timeserver = TimeServer()
-    timeserver.run()
-    opt = OtherProcess()
-    opt.run()
+    timeserver.start()
+    s = ServerRequestThread()
+    s.start()
+    time.sleep(2)
+    opt = ElectionManager()
+    opt.start()

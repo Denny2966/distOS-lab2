@@ -13,7 +13,7 @@ from SimpleXMLRPCServer import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
 class AsyncXMLRPCServer(SocketServer.ThreadingMixIn,SimpleXMLRPCServer): pass 
 
 otherProcesses = []
-port = 0
+port = tcf.masterPort
 
 class TimeServer(threading.Thread):
     def run(self):
@@ -27,26 +27,36 @@ class TimeServer(threading.Thread):
         if tcf.isMaster:
             print os.getpid(), "Master initializing."
         while tcf.isMaster:
-            time.sleep(10)
+            time.sleep(5)
             rtts = []
             times = []
+            print otherProcesses
             for process in otherProcesses:
                 try:
                     proxy = xmlrpclib.ServerProxy("http://" + process[0] + ":" + str(process[1]))
                     #calculate latency
-                    t = timeit.Timer('proxy.getTime()')
-                    rtts.append(t.timeit()*2.0)
-                    times.append( proxy.getTime())
-                except:
+                    print "calcualting rtt."
+                    t0 = time.time()
+                    times.append(proxy.getTime())
+                    t1 = time.time()
+                    print "getting time"
+                    rtts.append((t1-t0)*2.0)
+                except Exception as e:
                     otherProcesses.remove(process)
                     pass
-                average = sum(times)/len(times)
+                if len(times) > 0:
+                    average = sum(times)/len(times)
+                else:
+                    average = os.times()[5]
                 for process in otherProcesses:
                     try:
                         proxy = xmlrpclib.ServerProxy("http://" + process[0] + ":" + str(process[1]))
                         index = otherProcesses.index(process)
+                        print "Setting offset for process", ()
                         proxy.setOffset(times[index] - average)
-                    except:
+                    except IndexError:
+                        pass
+                    except Exception as e:
                         index = otherProcesses.index(process)
                         otherProcesses.remove(process)
                         del times[index]
@@ -56,6 +66,7 @@ class ServerRequestThread(threading.Thread):
     Launches xml async server
     """
     def run(self):
+        global port
         #heartbeat
         for p in xrange(8100,8200):
             port = p
@@ -65,6 +76,8 @@ class ServerRequestThread(threading.Thread):
                 server.register_function(election, "election")
                 server.register_function(registerProcess, "registerProcess")
                 server.register_function(setOffset, "setOffset")
+                server.register_function(getTime, "getTime")
+                server.register_function(getOffset, "getOffset")
                 server.serve_forever()
             except Exception as e:
                 print e
@@ -76,7 +89,6 @@ class ElectionManager(threading.Thread):
     Runs election if failure is detected
     """
     def run(self):
-        print port
         self.proxy = xmlrpclib.ServerProxy("http://" + tcf.masterIP + ":"+ str( tcf.masterPort )) #proxy to master port
         if tcf.masterIP == "127.0.0.1":
             ipAddress = "127.0.0.1"
@@ -86,15 +98,15 @@ class ElectionManager(threading.Thread):
             try: 
                 print "contacting master..."
                 otherProcesses = self.proxy.registerProcess(ipAddress,port)
+                "success."
                 while True:
-                    time.sleep(1)
+                    time.sleep(2)
                     otherProcesses = self.proxy.registerProcess(ipAddress,port)
             except Exception as e:
                 print e
                 election()
 
 def registerProcess(ipAddress,port):
-    print os.getpid(), "registerProcess called"
     if (ipAddress,port) not in otherProcesses:
         print "Registering Process", (ipAddress,port)
         otherProcesses.append((ipAddress,port))
@@ -125,12 +137,16 @@ def election():
 def setOffset(offset):
     print os.getpid(), "offset set to:", offset
     TimeServer.offset = offset
+    return True
 
 def getOffset():
-    return os.times[2] + TimeServer.offset
+    return os.times[5] + TimeServer.offset
+
+def getTime():
+    return os.times()[4]
 
 
-if __name__ == '__main__':
+def SetupServer():
     timeserver = TimeServer()
     timeserver.start()
     s = ServerRequestThread()
@@ -138,3 +154,6 @@ if __name__ == '__main__':
     time.sleep(2)
     opt = ElectionManager()
     opt.start()
+
+if __name__ == '__main__':
+    SetupServer()

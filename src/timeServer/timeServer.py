@@ -14,6 +14,9 @@ class AsyncXMLRPCServer(SocketServer.ThreadingMixIn,SimpleXMLRPCServer): pass
 
 otherProcesses = []
 port = tcf.masterPort
+myport = None
+myipAddress = None
+isMaster = False
 
 class TimeServer(threading.Thread):
     offset = 0 
@@ -25,9 +28,8 @@ class TimeServer(threading.Thread):
         keeps track of other proceseses
         """
         global otherProcesses
-        if tcf.isMaster:
-            print os.getpid(), "Master initializing."
-        while tcf.isMaster:
+        print os.getpid(), "Master initializing."
+        while isMaster:
             time.sleep(5)
             rtts = []
             times = []
@@ -68,46 +70,58 @@ class ServerRequestThread(threading.Thread):
     """
     def run(self):
         global port
-        #heartbeat
+        global myport
         for p in xrange(8100,8200):
-            ServerRequestThread.port = p
+            myport = p
             try:
-                print "starting server", ServerRequestThread.port
-                server = AsyncXMLRPCServer(('', ServerRequestThread.port), SimpleXMLRPCRequestHandler)
+                print "starting server on", myport
+                server = AsyncXMLRPCServer(('', myport), SimpleXMLRPCRequestHandler)
                 server.register_function(election, "election")
+                server.register_function(amongstTheLiving, "amongstTheLiving")
                 server.register_function(registerProcess, "registerProcess")
                 server.register_function(setOffset, "setOffset")
                 server.register_function(getTime, "getTime")
                 server.register_function(getOffset, "getOffset")
+                server.register_function(amIMaster, "amIMaster")
                 server.serve_forever()
             except Exception as e:
                 print e
                 continue
 
-class ElectionManager(threading.Thread):
-    """
-    Runs heartbeat to check if master is still active, gets list of processes
-    Runs election if failure is detected
-    """
+class heartbeat(threading.Thread):
     def run(self):
+        self.proxy = xmlrpclib.ServerProxy("http://" + tcf.masterIP + ":"+ str( port )) #proxy to master port
+        global myport
         global otherProcesses
-        self.proxy = xmlrpclib.ServerProxy("http://" + tcf.masterIP + ":"+ str( tcf.masterPort )) #proxy to master port
+        global myipAddress
         if tcf.masterIP == "127.0.0.1":
-            ipAddress = "127.0.0.1"
+            myipAddress = "127.0.0.1"
         else:
-            ipAddress = socket.gethostbyname(socket.gethostname())
-        if not tcf.isMaster:
-            try: 
-                print "contacting master..."
-                otherProcesses = self.proxy.registerProcess(ipAddress,ServerRequestThread.port)
-                print "success."
-                while True:
-                    time.sleep(2)
-                    otherProcesses = self.proxy.registerProcess(ipAddress,ServerRequestThread.port)
-            except Exception as e:
-                print e
-                election()
+            myipAddress = socket.gethostbyname(socket.gethostname())
+        otherProcesses = self.proxy.registerProcess(myipAddress, myport)
+        election()
+        try: 
+            while True:
+                if isMaster:
+                    for process in otherProcesses:
+                        print "Contacting process", process
+                        proxy = xmlrpclib.ServerProxy("http://" + process[0] + ":"+ str( process[1] ))
+                        proxy.amongstTheLiving()
+                        print "success"
+                        time.sleep(10)
+                else:
+                    print "Contacting master..."
+                    otherProcesses = self.proxy.registerProcess(myipAddress, myport)
+                    print otherProcesses
+                    print "success"
+                    time.sleep(10)
+        except Exception as e:
+            print e
+            election()
 
+def amongstTheLiving(x):
+    return True
+            
 def registerProcess(ipAddress,port):
     """
     Makes the master process aware of the slave process
@@ -115,7 +129,6 @@ def registerProcess(ipAddress,port):
     """
     global otherProcesses
     if (ipAddress,port) not in otherProcesses:
-        print "Registering Process", (ipAddress,port)
         otherProcesses.append((ipAddress,port))
     return otherProcesses
 
@@ -125,30 +138,41 @@ def election():
     Elects new master if the current process dies
     """
     global otherProcesses
+    global isMaster
+    global myport
     print "Starting election", os.getpid()
     print otherProcesses
     winner = True
     for process in otherProcesses:
+        print process
         try:
-            "Election running for", process[1]
-            if ServerRequestThread.port > process[1]: 
-                proxy = xmlrpclib.ServerProxy("http://" + process[0] + ":" + str( process[1] ))
+            proxy = xmlrpclib.ServerProxy("http://" + process[0] + ":" + str( process[1] ))
+            if (myport > process[1] or proxy.amIMaster()) and not isMaster: 
+                print myport, process[1]
                 result = proxy.election()
                 print "Result:", result
                 winner = False
                 if result == "IWON":
-                    tcf.masterIP = process[0]
-                    tcf.masterPort  = process[1]
+                    tcf.masterIP= process[0]
+                    tcf.masterPort= process[1]
         except Exception as e:
             print e
             continue
     if winner:
-        print "process", os.getpid(), "Won Election"
-        tcf.isMaster = True
+        print "Won Election"
+        isMaster = True
         timeserver = TimeServer()
         timeserver.start()
         return "IWON"
+    isMaster = False
+    print "Replying OK"
     return "OK"
+
+def amIMaster():
+    return isMaster
+
+def amongstTheLiving():
+    return True
 
 def setOffset(offset):
     print os.getpid(), "offset set to:", offset
@@ -162,16 +186,14 @@ def getTime():
     return os.times()[4]
 
 def SetupServer():
-    timeserver = TimeServer()
-    timeserver.start()
     s = ServerRequestThread()
     s.start()
-    time.sleep(2)
-    opt = ElectionManager()
-    opt.start()
+    time.sleep(5)
+    h = heartbeat()
+    h.start()
 
 if __name__ == '__main__':
     SetupServer()
     time.sleep(10)
-    if not tcf.isMaster:
+    if not isMaster:
         print getOffset()

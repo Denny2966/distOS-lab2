@@ -1,4 +1,6 @@
-Curling: [0, 0, 0]
-Skating: [6, 2, True]
-Skiing: [9, 8, False]
+Curling: [2, 2, False, 'Thu, 03 Apr 2014 19:49:17 +0000']
+Skating: [1, 2, False, 'Thu, 03 Apr 2014 19:49:15 +0000']
+Skiing: [1, 1, False, 'Thu, 03 Apr 2014 19:49:13 +0000']
+
+
 

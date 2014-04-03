@@ -1,5 +1,5 @@
-server_ips = ('127.0.0.1', '127.0.0.1')
-server_ports = (8005, 8006)
+remote_server_ips = ('127.0.0.1', '127.0.0.1')
+remote_server_ports = (8005, 8006)
 
 poisson_lambda = 5
 simu_len = 60

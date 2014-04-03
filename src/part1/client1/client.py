@@ -21,7 +21,7 @@ import socket
 import time
 
 tally_board = [[0 for x in xrange(2)] for x in xrange(3)]
-score_board = [[0 for x in xrange(3)] for x in xrange(3)]
+score_board = [[0 for x in xrange(4)] for x in xrange(3)]
 
 team_name_list = ['Gauls', 'Romans']
 medal_type_list = ['Gold', 'Silver', 'Bronze']
@@ -107,10 +107,10 @@ class ClientObject:
 			for i in range(remote_servers_num):
 				URL = "http://" + self.remote_addresses[0][i] + ":" + str(self.remote_addresses[1][i]);
 
-				s_list.push(xmlrpclib.ServerProxy(URL))
+				s_list.append(xmlrpclib.ServerProxy(URL))
 
 			for t_val in t:
-				s_index = np.floor(np.random.rand(1)*remote_servers_num)
+				s_index = int(np.floor(np.random.rand(1)*remote_servers_num))
 				s = s_list[s_index]
 				time.sleep(t_val)
 				if np.random.rand(1) < get_score_pb:
@@ -129,7 +129,7 @@ class ClientObject:
 if __name__ == "__main__":
 	remote_ips = cf.remote_server_ips
 	remote_ports = cf.remote_server_ports
-	ips_len = len(ips)
+	ips_len = len(remote_ips)
 
 #	rand_index = random.randrange(0,2)
 #	remote_host_name = ips[rand_index]

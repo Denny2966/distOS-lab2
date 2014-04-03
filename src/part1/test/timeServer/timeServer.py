@@ -171,8 +171,8 @@ class heartbeat(threading.Thread):
                     portSnapshort = port
                     elec_lock.release()
 
-             #       print "+++", masterIPSnapshort
-             #       print "---", portSnapshort
+                    print "+++", masterIPSnapshort
+                    print "---", portSnapshort
 
                     self.proxy = xmlrpclib.ServerProxy("http://" + masterIPSnapshort + ":"+ str( portSnapshort )) #proxy to master port                    
                     self.proxy.amongstTheLiving()
@@ -304,7 +304,7 @@ def amongstTheLiving():
     return True
 
 def setOffset(offset):
-#    print os.getpid(), "offset set to:", offset
+    print os.getpid(), "offset set to:", offset
     
     TimeServer.offset = offset
     return True

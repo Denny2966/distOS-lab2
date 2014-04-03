@@ -6,23 +6,28 @@ Python source code - replace this with a description of the code and write the c
 
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
 
-import frontend_config as cf
+import time
 import threading
 import SocketServer
-import sys
 from SimpleXMLRPCServer import SimpleXMLRPCServer,SimpleXMLRPCRequestHandler
 #import SimpleXMLRPCServer
-import xmlrpclib
+import os
+import sys
 import socket
+import xmlrpclib
+import frontend_config as cf
 import re
 import numpy as np
-import socket
+
+sys.path.append(os.getcwd())
+import timeServer.timeServer as ts
+import timeServer.time_config as tcf
 
 # Threaded mix-in
 class AsyncXMLRPCServer(SocketServer.ThreadingMixIn,SimpleXMLRPCServer): pass 
 
 tally_board = [[0 for x in xrange(2)] for x in xrange(3)]
-score_board = [[0 for x in xrange(3)] for x in xrange(3)]
+score_board = [[0 for x in xrange(4)] for x in xrange(3)]
 
 team_name_dict = {"Gauls":0, "Romans":1}
 medal_type_dict = {"Gold":0, "Silver":1, "Bronze":2}
@@ -63,6 +68,10 @@ class ClientObject:
         URL = "http://" + self.remote_address[0] + ":" + str(self.remote_address[1])
         self.s = xmlrpclib.ServerProxy(URL)
 
+        self.time_ip = tcf.cluster_info[str(tcf.process_id)][0]
+        self.time_port = tcf.cluster_info[str(tcf.process_id)][1]
+        self.time_proxy = xmlrpclib.ServerProxy("http://" + self.time_ip + ":" + str(self.time_port))
+
     def get_medal_tally(self, team_name = 'Gauls'):
         result = self.s.getMedalTally(team_name)
     #		team_name_index = get_team_name_index(team_name)
@@ -99,6 +108,10 @@ class ClientObject:
         return result
 
     def setScore(self, eventType, score): # score is a list (score_of_Gauls, score_of_Romans, flag_whether_the_event_is_over)
+        epoch_time = self.time_proxy.getOffset()
+        readable_time = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.localtime(epoch_time))
+        score += [readable_time]
+
         return self.s.setScore(eventType, score)
 
 if __name__ == "__main__":
@@ -120,4 +133,8 @@ if __name__ == "__main__":
         print "Unexpected exception, cannot connect to the server:", info[0],",",info[1]
         sys.exit(1)
 
+	# set up time server
+    ts.SetupServer()
+
+    # run
     server.serve_forever()

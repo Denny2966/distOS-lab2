@@ -10,10 +10,19 @@ import time
 import threading
 import SocketServer
 from SimpleXMLRPCServer import SimpleXMLRPCServer,SimpleXMLRPCRequestHandler
+import os
 import sys
 import socket
 import xmlrpclib
 import server_config as cf
+
+sys.path.append(os.getcwd())
+import timeServer.timeServer as ts
+import timeServer.time_config as tcf
+
+global time_ip
+global time_port
+global time_proxy
 
 # Threaded mix-in
 class AsyncXMLRPCServer(SocketServer.ThreadingMixIn,SimpleXMLRPCServer): pass 
@@ -253,7 +262,7 @@ class RequestObject:
 
 if __name__ == "__main__":
 	tally_board = [[0 for x in xrange(2)] for x in xrange(3)]
-	score_board = [[0 for x in xrange(3)] for x in xrange(3)]
+	score_board = [[0 for x in xrange(4)] for x in xrange(3)] # last element for each x is the timestamp
 	client_dict = {}
 	dummy_score_for_an_event = [-1 for x in xrange(3)]
 
@@ -270,6 +279,13 @@ if __name__ == "__main__":
 	# sb_lock = threading.Lock();
 
 	server.register_instance(RequestObject(ReaderWriterLocks(), ReaderWriterLocks()))
+
+	# set up time server
+	ts.SetupServer()
+
+	time_ip = tcf.cluster_info[str(tcf.process_id)][0]
+	time_port = tcf.cluster_info[str(tcf.process_id)][1]
+	time_proxy = xmlrpclib.ServerProxy("http://" + time_ip + ":" + str(time_port))
 
 	# run!
 	server.serve_forever()

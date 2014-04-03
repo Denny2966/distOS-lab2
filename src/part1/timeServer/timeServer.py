@@ -187,9 +187,11 @@ def getTime():
 
 def SetupServer():
     s = ServerRequestThread()
+    s.daemon = True
     s.start()
     time.sleep(5)
     h = heartbeat()
+    h.daemon = True
     h.start()
 
 if __name__ == '__main__':

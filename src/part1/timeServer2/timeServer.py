@@ -228,7 +228,12 @@ def election():
                     continue
                 try:
                     proxy = xmlrpclib.ServerProxy("http://" + process[0] + ":" + str( process[1] ))
+                    print 'hello++++++++++++++++++++++++++++++'
+                    print process[0], ' ', process[1]
+                    print 'hello++++++++++++++++++++++++++++++'
                     result = proxy.remoteClaimIWon(myipAddress, myport)
+                    print result
+                    print 'hello++++++++++++++++++++++++++++++'
                 except Exception as e:
                     print e
                     continue
@@ -324,4 +329,4 @@ if __name__ == '__main__':
         if not isMasterSnapshot:
             print 'offset of ', pid, ' is ', getOffset()
         else:
-            print 'I am master with id ', pid
+            print pid

@@ -145,7 +145,11 @@ class ClientObject:
                                     s.record_request((req_type, req_para,), (c_time_snapshot+1, pid,))
                             except Exception as e:
                                     print e
-                                    pass
+                                    time.sleep(0.1)
+                                    try:
+                                        s.record_request((req_type, req_para,), (c_time_snapshot+1, pid,))
+                                    except:
+                                        pass
 
 
             except socket.error, (value,message):
@@ -183,7 +187,7 @@ def record_request(request, l_time):
     heap_lock.release()
     return flag
 
-def send_ack(l_time):
+def send_ack(l_time, pid):
     global ack_num_dict
     global dict_lock
 
@@ -225,10 +229,12 @@ class HeapThread(threading.Thread):
         global ack_num_dict
         global process_num
         global s_list
+        global pid
 
         have_sent_ack = set()
         ExpireCount = 3
         flag_count = 0
+        ele_pre = None
 
         remove_list = []
 
@@ -245,12 +251,33 @@ class HeapThread(threading.Thread):
                         have_sent_ack.add(l_time)
                         for s in s_list:
                             try:
-                                s.send_ack(l_time)
+                                s.send_ack(l_time, pid)
                             except Exception as e:
                                 print e
-                                pass
+                                time.sleep(0.1)
+                                try:
+                                    s.send_ack(l_time, pid)
+                                except:
+                                    pass
                 dict_lock.acquire()
                 try:
+                    if ele_pre == heap[0]:
+                        flag_count += 1
+                    else:
+                        flag_count = 0
+
+                    if flag_count >= ExpireCount:
+                        if heap[0] in ack_num_dict:
+                            del ack_num_dict[heap[0]]
+                        ele = hp.heappop(heap)
+                        print '****', ele
+                        heap_size -= 1
+                        flag_count = 0
+
+                    if heap_size > 0:
+                        ele_pre = heap[0]
+                    else:
+                        ele_pre = None
                     while heap_size > 0 and heap[0] in ack_num_dict and ack_num_dict[heap[0]] >= process_num:
                         del ack_num_dict[heap[0]]
                         tmp = hp.heappop(heap)

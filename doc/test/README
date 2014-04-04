@@ -1,2 +1,11 @@
-1. For test3, output files of both frontend servers are completely the same shows that the totally order is achieved as required
+Part 2 test and additional notes:
+
+1. Within test3 directory are output files of both frontend servers. The fact they are completely the same shows that the totally order is achieved as required. (winners_list.out is the list of per 100 request sender, number 3 to 6 corresponds to client 1 to 4 respectively; event_with_l_clock.out shows (local lamport clock when the request is sent, client_id))
+
+2. Seems that I've got a wrong understanding of the problem. "Note that in this case, requests must be multicast to all processes, in addition to being sent to the front-end server that will process the request", this is a statement of the problem; specifically it says "multicast to all processes", I thought I was required to include the clients when considering multicast.Though, my implementation of totally ordered multicast (using Lamport clock) is almost correct. It would be very simple to exclude the clients, although I've run out of time to complete that.
  
+3. I add both timeout mechanism, and retransmission mechanism when implementing Part 2
+
+4. ./admin_start.sh can be used to start the system, while ./admin_stop.sh can be used to stop it.
+
+5. Perhaps sometimes the code would fail to output all requests (but the output part is still in order) due to unhandled connection errors.

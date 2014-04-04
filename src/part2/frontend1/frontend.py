@@ -28,6 +28,7 @@ heap_size = 0
 remove_count = 0
 
 ack_num_dict = {}
+aux_ack_dict = {}
 
 process_num = 0
 
@@ -156,8 +157,9 @@ def record_request(request, l_time):
     heap_lock.release()
     return flag
 
-def send_ack(l_time):
+def send_ack(l_time, pro_id):
     global ack_num_dict
+    global aux_ack_dict
     global dict_lock
 
     l_time = tuple(l_time)
@@ -165,8 +167,10 @@ def send_ack(l_time):
     dict_lock.acquire()
     if l_time in ack_num_dict:
         ack_num_dict[l_time] += 1
+        aux_ack_dict[l_time] += [pro_id]
     else:
         ack_num_dict[l_time] = 1
+        aux_ack_dict[l_time] = [pro_id]
     dict_lock.release()
     return True
 
@@ -182,13 +186,17 @@ class HeapThread(threading.Thread):
         global heap_size
         global heap
         global ack_num_dict
+        global aux_ack_dict
         global process_num
         global remove_count
         global win_per_num_request
+        global pid
 
         have_sent_ack = set()
         ExpireCount = 3 # 3 seconds
         flag_count = 0
+
+        ele_pre = None
 
         while True:
             heap_lock.acquire()
@@ -203,21 +211,45 @@ class HeapThread(threading.Thread):
                         have_sent_ack.add(l_time)
                         for s in s_list:
                             try:
-                                s.send_ack(l_time)
-                            except Exception as e:
+                                s.send_ack(l_time, pid)
+                            except Exception as e: # retransmission, assume that when this happens, the failed RPC does not affect the status of corresponding server
                                 print 'send ack error: ', e
-                                pass
+                                try:
+                                    s.send_ack(l_time, pid)
+                                except:
+                                    pass
                 dict_lock.acquire()
                 try:
-                    print '++++', heap[0]
-                    print '++++', ack_num_dict[heap[0]]
+#                    print '++++', heap[0]
+#                    print '++++', ack_num_dict[heap[0]]
+#                    print '++++', aux_ack_dict[heap[0]]
+#                    print 'ele_pre', ele_pre
+#                    print 'ele_cur', heap[0]
+#                    print 'flag_count', flag_count
+                    if ele_pre == heap[0]:
+                        flag_count += 1
+                    else:
+                        flag_count = 0
+
+                    if flag_count >= ExpireCount:
+                        if heap[0] in ack_num_dict:
+                            del ack_num_dict[heap[0]]
+                        ele = hp.heappop(heap)
+                        print '****', ele
+                        heap_size -= 1
+                        flag_count = 0
+
+                    if heap_size > 0:
+                        ele_pre = heap[0]
+                    else:
+                        ele_pre = None
+
                     while heap_size > 0 and heap[0] in ack_num_dict and ack_num_dict[heap[0]] >= process_num:
                         del ack_num_dict[heap[0]]
                         ele = hp.heappop(heap)
                         print '----', ele
                         remove_count += 1
                         heap_size -= 1
-                        flag_count = 0
                         with open(l_file_name, 'a') as l_file :
                             l_file.write(str(ele) + '\n')
                         if remove_count % win_per_num_request == 0:

@@ -120,6 +120,10 @@ class ServerRequestThread(threading.Thread):
         server.serve_forever()
 
 class heartbeat(threading.Thread):
+    """
+    Checks if master is still alive.
+    Holds election if master dies.
+    """
     def run(self):
         global masterIP
         global port

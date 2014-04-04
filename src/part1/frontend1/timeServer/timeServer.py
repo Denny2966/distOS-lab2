@@ -8,6 +8,7 @@ import subprocess
 import socket
 import timeit
 import SocketServer
+import numpy as np
 
 from SimpleXMLRPCServer import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
 class AsyncXMLRPCServer(SocketServer.ThreadingMixIn,SimpleXMLRPCServer): pass 
@@ -141,29 +142,42 @@ class heartbeat(threading.Thread):
         initFlag_lock.release()
         election()
         while True:
+            time.sleep(15+(np.random.rand(1)[0]-0.5)*5)
+
             masterFlag_lock.acquire()
             isMasterSnapshot = isMaster
             masterFlag_lock.release()
 
+            # our election algorithm guarantees the correctness under the following assumptions:
+            # 1. if machine a connects with machine b, then a, and b must be mutually connected
+            # 2. if a connects with b, and c, then b must connects with c
             if isMasterSnapshot:
-             #   diffAllProcesses = list(set(initAllProcesses)-set(allProcesses))
-             #   print 'diff processes: ', [x[2] for x in allProcesses], ' ', [x[2] for x in diffAllProcesses]
-             #   process_lock.acquire()
-             #   for process in diffAllProcesses: # check whether disconnected process reconnect.
-             #       try:
-             #           #print "Contacting process", process
-             #           proxy = xmlrpclib.ServerProxy("http://" + process[0] + ":"+ str( process[1] ))
-             #           proxy.amongstTheLiving()
-             #           print "Some process joins or Some disconnected process reconnects"
-             #           allProcesses = registerProcess(process[0], process[1], process[2])
-             #           time.sleep(2)
-             #           election()
-             #           break
-             #       except:
-             #           continue
-             #   process_lock.release()
-                 time.sleep(10)
+                # in case "Some disconnected process reconnects; you can test this by letting a machine go off line and then reconnect it"
+                print '++++++Master Show Time'
+                largest_master_flag = True
+                two_masters_flag = False
+
+                process_lock.acquire()
+                for process in allProcesses: # check whether disconnected process reconnect.
+                    try:
+                        proxy = xmlrpclib.ServerProxy("http://" + process[0] + ":"+ str( process[1] ))
+                        IamMaster = proxy.amIMaster()
+                        if IamMaster and process[2] != pid:
+                            two_masters_flag = True
+                        if IamMaster and process[2] > pid:
+                            largest_master_flag = False
+                            break
+                    except:
+                        continue
+                process_lock.release()
+
+                if largest_master_flag and two_masters_flag:
+                    time.sleep(2)
+                    election()
+
             else:
+                print '++++++Slave Show Time'
+                # in case "The master get disconnected"
                 try:
                     print "Contacting master..." # check whether the master is disconnected.
                     elec_lock.acquire()
@@ -182,7 +196,6 @@ class heartbeat(threading.Thread):
                 except Exception as e:
                     print e
                     election()
-                time.sleep(10)
 
 def amongstTheLiving(x):
     return True

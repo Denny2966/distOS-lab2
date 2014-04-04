@@ -117,6 +117,7 @@ class ClientObject:
 					result = self.get_score(s, get_rand_value(event_type_list))
 				else:
 					result = self.get_medal_tally(s, get_rand_value(team_name_list))
+				print result
 
 		except socket.error, (value,message):
 			print "Could not open socket to the server: " + message

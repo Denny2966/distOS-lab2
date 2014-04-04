@@ -8,4 +8,4 @@ Part 2 test and additional notes:
 
 4. ./admin_start.sh can be used to start the system, while ./admin_stop.sh can be used to stop it.
 
-5. Perhaps sometimes the code would fail to output all requests (but the output part is still in order) due to unhandled connection errors.
+5. Perhaps sometimes, especially when the request rate is very large the code would fail to output all requests (but the output part is still in order) due to unhandled connection errors. (Though I did not see the failure yet.)

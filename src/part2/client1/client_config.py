@@ -10,6 +10,6 @@ cluster_info = {
 		'6':('127.0.0.1', 8103,)
 		}
 
-poisson_lambda = 20 # number of request per second
+poisson_lambda = 1 # number of request per second
 simu_len = 60 # last time of the experiment, in unit of second
 get_score_pb = 0.8

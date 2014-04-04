@@ -209,8 +209,8 @@ class HeapThread(threading.Thread):
                                 pass
                 dict_lock.acquire()
                 try:
-#                    print '++++', heap[0]
-#                    print '++++', ack_num_dict[heap[0]]
+                    print '++++', heap[0]
+                    print '++++', ack_num_dict[heap[0]]
                     while heap_size > 0 and heap[0] in ack_num_dict and ack_num_dict[heap[0]] >= process_num:
                         del ack_num_dict[heap[0]]
                         ele = hp.heappop(heap)

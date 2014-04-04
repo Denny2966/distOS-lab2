@@ -6,23 +6,48 @@ Python source code - replace this with a description of the code and write the c
 
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
 
-import frontend_config as cf
+import time
 import threading
 import SocketServer
-import sys
 from SimpleXMLRPCServer import SimpleXMLRPCServer,SimpleXMLRPCRequestHandler
 #import SimpleXMLRPCServer
-import xmlrpclib
+import os
+import sys
 import socket
+import xmlrpclib
+import frontend_config as cf
 import re
 import numpy as np
-import socket
 
+win_per_num_request = cf.win_per_num_request
+import heapq as hp
+MAX_HEAP_SIZE = 1000
+heap = []
+c_time = 0
+heap_size = 0
+remove_count = 0
+
+ack_num_dict = {}
+
+process_num = 0
+
+heap_lock = threading.Lock()
+dict_lock = threading.Lock()
+
+pid = cf.process_id
+cluster_info = cf.cluster_info
+
+myipAddress = cluster_info[str(pid)][0]
+myport = cluster_info[str(pid)][1]
+
+all_processes = []
+
+global client_object
 # Threaded mix-in
 class AsyncXMLRPCServer(SocketServer.ThreadingMixIn,SimpleXMLRPCServer): pass 
 
 tally_board = [[0 for x in xrange(2)] for x in xrange(3)]
-score_board = [[0 for x in xrange(3)] for x in xrange(3)]
+score_board = [[0 for x in xrange(4)] for x in xrange(3)]
 
 team_name_dict = {"Gauls":0, "Romans":1}
 medal_type_dict = {"Gold":0, "Silver":1, "Bronze":2}
@@ -30,9 +55,13 @@ event_type_dict = {"Curling":0, "Skating":1, "Skiing":2}
 
 t_file = None
 s_file = None
+l_file = None
+w_file = None
 
 t_file_name = './log/tally_board.out'
 s_file_name = './log/score_board.out'
+l_file_name = './log/event_with_l_clock.out'
+w_file_name = './log/winners_list.out'
 
 #global sb_lock
 #global output_lock
@@ -101,17 +130,147 @@ class ClientObject:
     def setScore(self, eventType, score): # score is a list (score_of_Gauls, score_of_Romans, flag_whether_the_event_is_over)
         return self.s.setScore(eventType, score)
 
-if __name__ == "__main__":
-    host_name = cf.self_ip
-    port = cf.self_port
+def record_request(request, l_time):
+    global s_list
+    global heap_lock
+    global MAX_HEAP_SIZE
+    global heap_size
+    global heap
+    global c_time
 
+    ele = tuple(l_time)
+    flag = True
+    heap_lock.acquire()
+    if MAX_HEAP_SIZE <= heap_size:
+        flag = False
+    else:
+        hp.heappush(heap, ele)
+        c_time += 1
+        heap_size += 1
+#        for s in s_list:
+#            try:
+#                s.send_ack(l_time, request)
+#            except:
+#                pass
+
+    heap_lock.release()
+    return flag
+
+def send_ack(l_time):
+    global ack_num_dict
+    global dict_lock
+
+    l_time = tuple(l_time)
+
+    dict_lock.acquire()
+    if l_time in ack_num_dict:
+        ack_num_dict[l_time] += 1
+    else:
+        ack_num_dict[l_time] = 1
+    dict_lock.release()
+    return True
+
+def check_alive():
+    return True
+
+class HeapThread(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+    def run(self):
+        global heap_lock
+        global client_object
+        global heap_size
+        global heap
+        global ack_num_dict
+        global process_num
+        global remove_count
+        global win_per_num_request
+
+        have_sent_ack = set()
+        ExpireCount = 3 # 3 seconds
+        flag_count = 0
+
+        while True:
+            heap_lock.acquire()
+            if heap_size == 0:
+                print 'nothing'
+                pass
+            else:
+                l_time = heap[0]
+                if l_time not in have_sent_ack:
+                    have_sent_ack.add(l_time)
+                    for s in s_list:
+                        try:
+                            s.send_ack(l_time)
+                        except:
+                            pass
+                dict_lock.acquire()
+                try:
+                    print heap[0]
+                    print ack_num_dict
+                    print process_num
+                    flag_count += 1
+                    if flag_count >= ExpireCount:
+                        ele = hp.heappop(heap)
+                        heap_size -= 1
+                        if ele in ack_num_dict:
+                            del ack_num_dict[ele]
+                    else:
+                        while heap_size > 0 and heap[0] in ack_num_dict and ack_num_dict[heap[0]] >= process_num:
+                            del ack_num_dict[heap[0]]
+                            ele = hp.heappop(heap)
+                            print ele
+                            remove_count += 1
+                            heap_size -= 1
+                            flag_count = 0
+                            with open(l_file_name, 'a') as l_file :
+                                l_file.write(str(ele) + '\n')
+                            if remove_count % win_per_num_request == 0:
+                                with open(w_file_name, 'a') as w_file :
+                                    w_file.write(str(ele[1]) + '\n')
+                except Exception as e:
+                    print e
+                dict_lock.release()
+            heap_lock.release()
+            print 'heap thread'
+            time.sleep(1)
+
+if __name__ == "__main__":
+    try:
+        l_file = open(l_file_name, 'w')
+        l_file.close()
+        w_file = open(w_file_name, 'w')
+        w_file.close()
+    except Exception as e:
+        print e
+        sys.exit(1)
+
+    for i in cluster_info:
+        all_processes.append((cluster_info[i][0], cluster_info[i][1], int(i)))
+    process_num = len(all_processes)
+
+    s_list = []
+    for process in all_processes:
+        URL = "http://" + process[0] + ":"+ str( process[1] )
+        print URL
+        s_list.append(xmlrpclib.ServerProxy(URL))
+    
     remote_host_name = cf.server_ip
     remote_port = cf.server_port
+    client_object = ClientObject(remote_host_name, remote_port)
 
-    server = AsyncXMLRPCServer(('', port), SimpleXMLRPCRequestHandler)
+    heap_thread = HeapThread()
+    heap_thread.daemon = True
+    heap_thread.start()
+
+#    server = SimpleXMLRPCServer(('', myport))	
+    server = AsyncXMLRPCServer(('', myport), SimpleXMLRPCRequestHandler)
 
     try:
         server.register_instance(ClientObject(remote_host_name, remote_port))
+        server.register_function(record_request, 'record_request')
+        server.register_function(check_alive, 'check_alive')
+        server.register_function(send_ack, 'send_ack')
     except socket.error, (value,message):
         print "Could not open socket to the server: " + message
         sys.exit(1)
@@ -120,4 +279,5 @@ if __name__ == "__main__":
         print "Unexpected exception, cannot connect to the server:", info[0],",",info[1]
         sys.exit(1)
 
+    # run
     server.serve_forever()

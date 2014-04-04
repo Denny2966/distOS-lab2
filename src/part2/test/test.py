@@ -1,7 +1,7 @@
 import os
 import sys
 import time
-sys.path.append(os.getcwd() + '/..')
+sys.path.append(os.getcwd())
 import timeServer.timeServer as ts
 import time_config as tcf
 

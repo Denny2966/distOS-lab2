@@ -187,7 +187,7 @@ class HeapThread(threading.Thread):
         global win_per_num_request
 
         have_sent_ack = set()
-        ExpireCount = 80 # 8 seconds
+        ExpireCount = 3 # 3 seconds
         flag_count = 0
 
         while True:
@@ -196,44 +196,39 @@ class HeapThread(threading.Thread):
                 print 'nothing'
                 pass
             else:
-                l_time = heap[0]
-                if l_time not in have_sent_ack:
-                    have_sent_ack.add(l_time)
-                    for s in s_list:
-                        try:
-                            s.send_ack(l_time)
-                        except:
-                            pass
+                time.sleep(0.1)
+#                print 'sent ack list: ', list(have_sent_ack)
+                for l_time in heap:
+                    if l_time not in have_sent_ack:
+                        have_sent_ack.add(l_time)
+                        for s in s_list:
+                            try:
+                                s.send_ack(l_time)
+                            except Exception as e:
+                                print 'send ack error: ', e
+                                pass
                 dict_lock.acquire()
                 try:
-                    print heap[0]
-                    print ack_num_dict
-                    print process_num
-                    flag_count += 1
-                    if flag_count >= ExpireCount:
+#                    print '++++', heap[0]
+#                    print '++++', ack_num_dict[heap[0]]
+                    while heap_size > 0 and heap[0] in ack_num_dict and ack_num_dict[heap[0]] >= process_num:
+                        del ack_num_dict[heap[0]]
                         ele = hp.heappop(heap)
+                        print '----', ele
+                        remove_count += 1
                         heap_size -= 1
-                        if ele in ack_num_dict:
-                            del ack_num_dict[ele]
-                    else:
-                        while heap_size > 0 and heap[0] in ack_num_dict and ack_num_dict[heap[0]] >= process_num:
-                            del ack_num_dict[heap[0]]
-                            ele = hp.heappop(heap)
-                            print ele
-                            remove_count += 1
-                            heap_size -= 1
-                            flag_count = 0
-                            with open(l_file_name, 'a') as l_file :
-                                l_file.write(str(ele) + '\n')
-                            if remove_count % win_per_num_request == 0:
-                                with open(w_file_name, 'a') as w_file :
-                                    w_file.write(str(ele[1]) + '\n')
+                        flag_count = 0
+                        with open(l_file_name, 'a') as l_file :
+                            l_file.write(str(ele) + '\n')
+                        if remove_count % win_per_num_request == 0:
+                            with open(w_file_name, 'a') as w_file :
+                                w_file.write(str(ele[1]) + '\n')
                 except Exception as e:
                     print e
                 dict_lock.release()
             heap_lock.release()
             print 'heap thread'
-            time.sleep(0.1)
+            time.sleep(1+np.random.rand()*2)
 
 if __name__ == "__main__":
     try:

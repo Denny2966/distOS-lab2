@@ -132,15 +132,17 @@ class ClientObject:
                     heap_lock.acquire()
                     c_time_snapshot = c_time
                     heap_lock.release()
+
+                    if np.random.rand(1) < get_score_pb:
+                            req_type = 'score'
+                            req_para = get_rand_value(event_type_list)
+                    else:
+                            req_type = 'medal'
+                            req_para = get_rand_value(team_name_list)
+  
                     for s in s_list:
-                            if np.random.rand(1) < get_score_pb:
-                                    req_type = 'score'
-                                    req_para = get_rand_value(event_type_list)
-                            else:
-                                    req_type = 'medal'
-                                    req_para = get_rand_value(team_name_list)
                             try:
-                                    s.record_request((req_type, req_para,), (c_time+1, pid,))
+                                    s.record_request((req_type, req_para,), (c_time_snapshot+1, pid,))
                             except Exception as e:
                                     print e
                                     pass
@@ -225,42 +227,41 @@ class HeapThread(threading.Thread):
         global s_list
 
         have_sent_ack = set()
-        ExpireCount = 80
+        ExpireCount = 3
         flag_count = 0
+
+        remove_list = []
 
         while True:
             heap_lock.acquire()
             if heap_size == 0:
                 pass
             else:
-                l_time = heap[0]
-                if l_time not in have_sent_ack:
-                    have_sent_ack.add(l_time)
-                    for s in s_list:
-                        try:
-                            s.send_ack(l_time)
-                        except Exception as e:
-                            print e
-                            pass
+#                print 'remove list', remove_list
+                time.sleep(0.1)
+#                print 'sent ack list: ', list(have_sent_ack)
+                for l_time in heap:
+                    if l_time not in have_sent_ack:
+                        have_sent_ack.add(l_time)
+                        for s in s_list:
+                            try:
+                                s.send_ack(l_time)
+                            except Exception as e:
+                                print e
+                                pass
                 dict_lock.acquire()
                 try:
-                    flag_count += 1
-                    if flag_count >= ExpireCount:
-                        ele = hp.heappop(heap)
+                    while heap_size > 0 and heap[0] in ack_num_dict and ack_num_dict[heap[0]] >= process_num:
+                        del ack_num_dict[heap[0]]
+                        tmp = hp.heappop(heap)
+                        remove_list += [tmp]
                         heap_size -= 1
-                        if ele in ack_num_dict:
-                            del ack_num_dict[ele]
-                    else:
-                        while heap_size > 0 and heap[0] in ack_num_dict and ack_num_dict[heap[0]] >= process_num:
-                            del ack_num_dict[heap[0]]
-                            tmp = hp.heappop(heap)
-                            heap_size -= 1
-                            flag_count = 0
+                        flag_count = 0
                 except Exception as e:
                     print e
                 dict_lock.release()
             heap_lock.release()
-            time.sleep(0.1)
+            time.sleep(1+np.random.rand()*2)
 
 if __name__ == "__main__":
         for i in cluster_info:

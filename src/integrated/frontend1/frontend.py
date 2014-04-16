@@ -72,6 +72,13 @@ w_file_name = './log/winners_list.out'
 #global output_lock
 #global s_file_lock
 
+class FirstList(tuple):
+    def __lt__(self, other):
+        if self[0:2] < other[0:2]:
+            return True
+        else:
+            return False
+
 def get_team_name_index(teamName):
 	team_name_index = -1
 	if team_name_dict.has_key(teamName): 	
@@ -101,25 +108,26 @@ class ClientObject:
         self.time_port = tcf.cluster_info[str(tcf.process_id)][1]
         self.time_proxy = xmlrpclib.ServerProxy("http://" + self.time_ip + ":" + str(self.time_port))
 
-    def get_medal_tally(self, team_name = 'Gauls'):
+    def get_medal_tally(self, client_id, team_name = 'Gauls'):
         global pid
         global c_time
         global s_list
 
         heap_lock.acquire()
         c_time_snapshot = c_time
+        c_time += 1
         heap_lock.release()
         req_type = 'medal'
         req_para = team_name
 
         for s in s_list:
             try:
-                s.record_request((req_type, req_para,), (c_time_snapshot+1, pid,))
+                s.record_request((req_type, req_para,), (c_time_snapshot+1, pid, client_id))
             except Exception as e:
                 print e
                 time.sleep(0.1)
                 try:
-                    s.record_request((req_type, req_para,), (c_time_snapshot+1, pid,))
+                    s.record_request((req_type, req_para,), (c_time_snapshot+1, pid, client_id))
                 except:
                     pass
         result = self.s.getMedalTally(team_name)
@@ -137,25 +145,26 @@ class ClientObject:
 
         return result
 
-    def get_score(self, event_type = 'Curling'):
+    def get_score(self, client_id, event_type = 'Curling' ):
         global pid
         global c_time
         global s_list
 
         heap_lock.acquire()
         c_time_snapshot = c_time
+        c_time += 1
         heap_lock.release()
         req_type = 'score'
         req_para = event_type
 
         for s in s_list:
             try:
-                s.record_request((req_type, req_para,), (c_time_snapshot+1, pid,))
+                s.record_request((req_type, req_para,), (c_time_snapshot+1, pid, client_id))
             except Exception as e:
                 print e
                 time.sleep(0.1)
                 try:
-                    s.record_request((req_type, req_para,), (c_time_snapshot+1, pid,))
+                    s.record_request((req_type, req_para,), (c_time_snapshot+1, pid, client_id))
                 except:
                     pass
 
@@ -196,6 +205,7 @@ def record_request(request, l_time):
     global c_time
 
     ele = tuple(l_time)
+    ele = FirstList(ele)
     flag = True
     heap_lock.acquire()
     if MAX_HEAP_SIZE <= heap_size:
@@ -218,7 +228,7 @@ def send_ack(l_time, pro_id):
     global aux_ack_dict
     global dict_lock
 
-    l_time = tuple(l_time)
+    l_time = tuple(l_time[0:2])
 
     dict_lock.acquire()
     if l_time in ack_num_dict:
@@ -263,8 +273,8 @@ class HeapThread(threading.Thread):
                 time.sleep(0.1)
 #                print 'sent ack list: ', list(have_sent_ack)
                 for l_time in heap:
-                    if l_time not in have_sent_ack:
-                        have_sent_ack.add(l_time)
+                    if l_time[0:2] not in have_sent_ack:
+                        have_sent_ack.add(l_time[0:2])
                         for s in s_list:
                             try:
                                 s.send_ack(l_time, pid)
@@ -276,32 +286,32 @@ class HeapThread(threading.Thread):
                                     pass
                 dict_lock.acquire()
                 try:
-#                    print '++++', heap[0]
-#                    print '++++', ack_num_dict[heap[0]]
-#                    print '++++', aux_ack_dict[heap[0]]
-#                    print 'ele_pre', ele_pre
-#                    print 'ele_cur', heap[0]
-#                    print 'flag_count', flag_count
-                    if ele_pre == heap[0]:
+                    print '++++', heap[0]
+                    print '++++', ack_num_dict[heap[0]]
+                    print '++++', aux_ack_dict[heap[0]]
+                    print 'ele_pre', ele_pre
+                    print 'ele_cur', heap[0]
+                    print 'flag_count', flag_count
+                    if ele_pre == heap[0][0:2]:
                         flag_count += 1
                     else:
                         flag_count = 0
 
                     if flag_count >= ExpireCount:
-                        if heap[0] in ack_num_dict:
-                            del ack_num_dict[heap[0]]
+                        if heap[0][0:2] in ack_num_dict:
+                            del ack_num_dict[heap[0][0:2]]
                         ele = hp.heappop(heap)
                         print '****', ele
                         heap_size -= 1
                         flag_count = 0
 
                     if heap_size > 0:
-                        ele_pre = heap[0]
+                        ele_pre = heap[0][0:2]
                     else:
                         ele_pre = None
 
-                    while heap_size > 0 and heap[0] in ack_num_dict and ack_num_dict[heap[0]] >= process_num:
-                        del ack_num_dict[heap[0]]
+                    while heap_size > 0 and heap[0][0:2] in ack_num_dict and ack_num_dict[heap[0][0:2]] >= process_num:
+                        del ack_num_dict[heap[0][0:2]]
                         ele = hp.heappop(heap)
                         print '----', ele
                         remove_count += 1
@@ -318,6 +328,23 @@ class HeapThread(threading.Thread):
             print 'heap thread'
             time.sleep(1+np.random.rand()*2)
 
+class ServerThread(threading.Thread):
+    """a RPC server listening to push request from the server of the whole system"""
+    def __init__(self, port):
+        global remote_host_name
+        global remote_port
+        threading.Thread.__init__(self)
+        self.port = port
+
+        self.localServer = AsyncXMLRPCServer(('', port), SimpleXMLRPCRequestHandler) #SimpleXMLRPCServer(('', port))
+        self.localServer.register_instance(ClientObject(remote_host_name, remote_port))
+
+        self.localServer.register_function(record_request, 'record_request')
+        self.localServer.register_function(check_alive, 'check_alive')
+        self.localServer.register_function(send_ack, 'send_ack')
+    def run(self):
+        self.localServer.serve_forever()
+
 if __name__ == "__main__":
     try:
         l_file = open(l_file_name, 'w')
@@ -327,6 +354,15 @@ if __name__ == "__main__":
     except Exception as e:
         print e
         sys.exit(1)
+    # set up time server
+    ts.SetupServer()
+
+    remote_host_name = cf.server_ip
+    remote_port = cf.server_port
+
+    server = ServerThread(myport)
+    server.daemon = True; # allow the thread exit right after the main thread exits by keyboard interruption.
+    server.start() # The server is now running
 
     for i in cluster_info:
         all_processes.append((cluster_info[i][0], cluster_info[i][1], int(i)))
@@ -349,30 +385,10 @@ if __name__ == "__main__":
             print 'waiting...'   
             time.sleep(2)
             continue
-    
-    remote_host_name = cf.server_ip
-    remote_port = cf.server_port
-    client_object = ClientObject(remote_host_name, remote_port)
 
     heap_thread = HeapThread()
     heap_thread.daemon = True
     heap_thread.start()
 
-#    server = SimpleXMLRPCServer(('', myport))	
-    server = AsyncXMLRPCServer(('', myport), SimpleXMLRPCRequestHandler)
-
-    try:
-        server.register_instance(ClientObject(remote_host_name, remote_port))
-        server.register_function(record_request, 'record_request')
-        server.register_function(check_alive, 'check_alive')
-        server.register_function(send_ack, 'send_ack')
-    except socket.error, (value,message):
-        print "Could not open socket to the server: " + message
-        sys.exit(1)
-    except :
-        info = sys.exc_info()
-        print "Unexpected exception, cannot connect to the server:", info[0],",",info[1]
-        sys.exit(1)
-
-    # run
-    server.serve_forever()
+    while True:
+        time.sleep(5)

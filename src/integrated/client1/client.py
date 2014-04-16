@@ -20,6 +20,8 @@ import random
 import socket
 import time
 
+pid = cf.process_id
+
 tally_board = [[0 for x in xrange(2)] for x in xrange(3)]
 score_board = [[0 for x in xrange(4)] for x in xrange(3)]
 
@@ -67,7 +69,8 @@ class ClientObject:
 		self.remote_addresses = (remote_ips, remote_ports)
 
 	def get_medal_tally(self, s, team_name = 'Gauls'):
-		result = s.get_medal_tally(team_name)
+                global pid
+		result = s.get_medal_tally(pid, team_name)
 
 		team_name_index = get_team_name_index(team_name)
 		if team_name_index != -1 :
@@ -82,7 +85,9 @@ class ClientObject:
 		return result
 
 	def get_score(self, s, event_type = 'Curling'):
-		result = s.get_score(event_type)
+                global pid
+                print pid
+		result = s.get_score(pid, event_type)
 
 		event_type_index = get_event_type_index(event_type)
 		if event_type_index != -1:
@@ -117,7 +122,7 @@ class ClientObject:
 					result = self.get_score(s, get_rand_value(event_type_list))
 				else:
 					result = self.get_medal_tally(s, get_rand_value(team_name_list))
-				print result
+				print '+++++', result
 
 		except socket.error, (value,message):
 			print "Could not open socket to the server: " + message

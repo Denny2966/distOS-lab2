@@ -113,36 +113,7 @@ class ClientObject:
         global c_time
         global s_list
 
-        heap_lock.acquire()
-        c_time_snapshot = c_time
-        c_time += 1
-        heap_lock.release()
-        req_type = 'medal'
-        req_para = team_name
-
-        for s in s_list:
-            try:
-                s.record_request((req_type, req_para,), (c_time_snapshot+1, pid, client_id))
-            except Exception as e:
-                print e
-                time.sleep(0.1)
-                try:
-                    s.record_request((req_type, req_para,), (c_time_snapshot+1, pid, client_id))
-                except:
-                    pass
         result = self.s.getMedalTally(team_name)
-    #		team_name_index = get_team_name_index(team_name)
-    #
-    #		if team_name_index != -1 :
-    #			tally_board[team_name_index] = result
-    #
-    #			# write obtained medal tally into the output file
-    #			with open(t_file_name, 'r+') as t_file :
-    #				t_file_data = t_file.readlines()
-    #				t_file_data[team_name_index] = str(team_name) + ': ' + str(result) + '\n'
-    #				t_file.seek(0)
-    #				t_file.writelines(t_file_data)
-
         return result
 
     def get_score(self, client_id, event_type = 'Curling' ):
@@ -150,10 +121,12 @@ class ClientObject:
         global c_time
         global s_list
 
+        print 'c_time heap_lock released'
         heap_lock.acquire()
         c_time_snapshot = c_time
         c_time += 1
         heap_lock.release()
+        print 'c_time heap_lock released'
         req_type = 'score'
         req_para = event_type
 
@@ -169,17 +142,6 @@ class ClientObject:
                     pass
 
         result = self.s.getScore(event_type)
-
-    #		event_type_index = get_event_type_index(event_type)
-    #		if event_type_index != -1:
-    #			score_board[event_type_index] = result
-    #
-    #			# write obtained scores into the output file
-    #			with open(s_file_name, 'r+') as s_file :
-    #				s_file_data = s_file.readlines()
-    #				s_file_data[event_type_index] = str(event_type) + ': ' + str(result)  + '\n'
-    #				s_file.seek(0)
-    #				s_file.writelines(s_file_data)
         return result
 
     def incrementMedalTally(self, teamName, medalType):
@@ -187,7 +149,6 @@ class ClientObject:
         return result
 
     def setScore(self, eventType, score): # score is a list (score_of_Gauls, score_of_Romans, flag_whether_the_event_is_over)
-        print 'wzd'
         print self.time_ip, self.time_port
         print ts.getOffset()
         epoch_time = self.time_proxy.getOffset()
@@ -208,19 +169,17 @@ def record_request(request, l_time):
     ele = FirstList(ele)
     flag = True
     heap_lock.acquire()
+#    print 'record_request heap_lock acquired'
     if MAX_HEAP_SIZE <= heap_size:
         flag = False
     else:
         hp.heappush(heap, ele)
-        c_time += 1
+        if ele[1] != pid:
+            c_time += 1 # suppose the request sent to self is received immediately!
         heap_size += 1
-#        for s in s_list:
-#            try:
-#                s.send_ack(l_time, request)
-#            except:
-#                pass
 
     heap_lock.release()
+#    print 'record_request heap_lock released'
     return flag
 
 def send_ack(l_time, pro_id):
@@ -229,6 +188,7 @@ def send_ack(l_time, pro_id):
     global dict_lock
 
     l_time = tuple(l_time[0:2])
+# l_time is asserted a tuple
 
     dict_lock.acquire()
     if l_time in ack_num_dict:
@@ -273,6 +233,7 @@ class HeapThread(threading.Thread):
                 time.sleep(0.1)
 #                print 'sent ack list: ', list(have_sent_ack)
                 for l_time in heap:
+                    l_time = tuple(l_time)
                     if l_time[0:2] not in have_sent_ack:
                         have_sent_ack.add(l_time[0:2])
                         for s in s_list:
@@ -286,42 +247,54 @@ class HeapThread(threading.Thread):
                                     pass
                 dict_lock.acquire()
                 try:
-                    print '++++', heap[0]
-                    print '++++', ack_num_dict[heap[0]]
-                    print '++++', aux_ack_dict[heap[0]]
+                    heap_tmp = tuple(heap[0])
+                    print '++++1', heap_tmp
+
+                    if heap_tmp[0:2] in ack_num_dict:
+                        print '++++2', ack_num_dict[heap_tmp[0:2]]
+                        print '++++3', aux_ack_dict[heap_tmp[0:2]]
+                    else:
+                        print '++++2,3', ' no dict element'
                     print 'ele_pre', ele_pre
-                    print 'ele_cur', heap[0]
+                    print 'ele_cur', heap_tmp[0:2]
                     print 'flag_count', flag_count
-                    if ele_pre == heap[0][0:2]:
+                    if ele_pre == heap_tmp[0:2]:
                         flag_count += 1
                     else:
                         flag_count = 0
 
-                    if flag_count >= ExpireCount:
-                        if heap[0][0:2] in ack_num_dict:
-                            del ack_num_dict[heap[0][0:2]]
+                    if flag_count >= ExpireCount: # timeout, remove it from the heap
+                        if heap_tmp[0:2] in ack_num_dict:
+                            del ack_num_dict[heap_tmp[0:2]]
                         ele = hp.heappop(heap)
                         print '****', ele
                         heap_size -= 1
                         flag_count = 0
 
                     if heap_size > 0:
-                        ele_pre = heap[0][0:2]
+                        heap_tmp = tuple(heap[0])
+                        ele_pre = heap_tmp[0:2]
                     else:
                         ele_pre = None
 
-                    while heap_size > 0 and heap[0][0:2] in ack_num_dict and ack_num_dict[heap[0][0:2]] >= process_num:
-                        del ack_num_dict[heap[0][0:2]]
-                        ele = hp.heappop(heap)
-                        print '----', ele
-                        remove_count += 1
-                        heap_size -= 1
-                        with open(l_file_name, 'a') as l_file :
-                            l_file.write(str(ele) + '\n')
-                        if remove_count % win_per_num_request == 0:
-                            with open(w_file_name, 'a') as w_file :
-                                w_file.write(str(ele[1]) + '\n')
+                    while heap_size > 0:
+                        heap_tmp = tuple(heap[0])
+                        if heap_tmp[0:2] in ack_num_dict and ack_num_dict[heap_tmp[0:2]] >= process_num:
+                            del ack_num_dict[heap_tmp[0:2]]
+                            ele = hp.heappop(heap)
+                            print '----', ele
+                            remove_count += 1
+                            heap_size -= 1
+
+                            with open(l_file_name, 'a') as l_file :
+                                l_file.write(str((ele[0],ele[2])) + '\n')
+                            if remove_count % win_per_num_request == 0:
+                                with open(w_file_name, 'a') as w_file :
+                                    w_file.write(str(ele[2]) + '\n')
+                        else:
+                            break
                 except Exception as e:
+                    print 'wzd'
                     print e
                 dict_lock.release()
             heap_lock.release()
